@@ -1,127 +1,59 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
+  Container,
   TablePagination,
   CircularProgress,
   Alert,
-  Chip,
   Typography,
   Box,
-  Container,
-  Card,
-  CardContent,
 } from "@mui/material";
-import {
-  User,
-  GetUsersResponse,
-  formatUserData,
-  getTierName,
-} from "@/types/user";
+import { ThemeProvider } from "@mui/material/styles";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
-const getTierColor = (
-  tier: number
-):
-  | "default"
-  | "primary"
-  | "secondary"
-  | "error"
-  | "info"
-  | "success"
-  | "warning" => {
-  switch (tier) {
-    case 0:
-      return "default";
-    case 1:
-      return "info";
-    case 2:
-      return "primary";
-    case 3:
-      return "warning";
-    case 4:
-      return "success";
-    default:
-      return "default";
-  }
-};
+import { theme } from "@/theme/theme";
+import { useUsers } from "@/hooks/useUsers";
+import { usePagination } from "@/hooks/usePagination";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { StatsGrid } from "@/components/dashboard/StatsGrid";
+import { UsersTable } from "@/components/dashboard/UsersTable";
+import TierExplanation from "@/components/dashboard/TierExplanation";
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [globalStats, setGlobalStats] = useState<any>(null);
+// Create a client instance
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+    },
+  },
+});
 
-  const fetchUsers = async (currentPage = 0, limit = 25) => {
-    try {
-      setLoading(true);
-      setError(null);
+const UsersPageContent: React.FC = () => {
+  const { page, rowsPerPage, handleChangePage, handleChangeRowsPerPage } =
+    usePagination(0, 25);
 
-      // Convert MUI pagination (0-based) to API pagination (1-based)
-      const apiPage = currentPage + 1;
+  const [selectedTier, setSelectedTier] = useState<number | null>(null);
 
-      const response = await fetch("/api/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          page: apiPage,
-          limit,
-          sortBy: "total_points_earned",
-          sortOrder: "desc",
-        }),
-      });
+  const { data, isLoading, error } = useUsers({
+    page: page + 1, // Convert to 1-based for API
+    limit: rowsPerPage,
+    sortBy: "total_points_earned",
+    sortOrder: "desc",
+    tierFilter: selectedTier,
+  });
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch users: ${response.status} ${response.statusText}`
-        );
-      }
+  const { users = [], totalUsers = 0, globalStats } = data || {};
 
-      const data: GetUsersResponse = await response.json();
-      setUsers(data.users);
-      setTotalUsers(data.totalUsers);
-      if (data.globalStats) {
-        setGlobalStats(data.globalStats);
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching users"
-      );
-    } finally {
-      setLoading(false);
-    }
+  const handleTierFilter = (tier: number | null) => {
+    setSelectedTier(tier);
+    // Reset to first page when filtering
+    handleChangePage(null, 0);
   };
 
-  useEffect(() => {
-    fetchUsers(page, rowsPerPage);
-  }, [page, rowsPerPage]);
-
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const newRowsPerPage = parseInt(event.target.value, 10);
-    setRowsPerPage(newRowsPerPage);
-    setPage(0); // Reset to first page
-  };
-
-  if (loading && users.length === 0) {
+  if (isLoading && users.length === 0) {
     return (
       <Container maxWidth="xl" className="py-8">
         <Box
@@ -129,9 +61,11 @@ export default function UsersPage() {
           justifyContent="center"
           alignItems="center"
           minHeight="400px"
+          flexDirection="column"
+          gap={2}
         >
           <CircularProgress size={40} />
-          <Typography variant="h6" className="ml-4">
+          <Typography variant="h6" className="text-gray-600">
             Loading users...
           </Typography>
         </Box>
@@ -139,193 +73,69 @@ export default function UsersPage() {
     );
   }
 
+  if (error) {
+    return (
+      <Container maxWidth="xl" className="py-8">
+        <Alert severity="error" className="mb-6">
+          {error instanceof Error
+            ? error.message
+            : "An error occurred while fetching users"}
+        </Alert>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="xl" className="py-8">
-      <div className="mb-6">
-        <Typography
-          variant="h4"
-          component="h1"
-          className="font-bold text-gray-800 mb-2"
-        >
-          WMON Users Dashboard
-        </Typography>
-        <Typography variant="subtitle1" className="text-gray-600 mb-4">
-          Total users: {totalUsers.toLocaleString()}
-        </Typography>
-      </div>
+      <DashboardHeader totalUsers={totalUsers} />
 
-      {/* Global Stats Cards */}
-      {globalStats && (
-        <div className="flex flex-wrap gap-4 mb-6">
-          <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white flex-1 min-w-[200px]">
-            <CardContent>
-              <Typography variant="h6" className="font-medium">
-                Total Users
-              </Typography>
-              <Typography variant="h4" className="font-bold">
-                {parseInt(globalStats.total_users).toLocaleString()}
-              </Typography>
-            </CardContent>
-          </Card>
+      {globalStats && <StatsGrid stats={globalStats} />}
 
-          <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white flex-1 min-w-[200px]">
-            <CardContent>
-              <Typography variant="h6" className="font-medium">
-                Total Points
-              </Typography>
-              <Typography variant="h4" className="font-bold">
-                {parseInt(
-                  globalStats.total_points_distributed
-                ).toLocaleString()}
-              </Typography>
-            </CardContent>
-          </Card>
+      <TierExplanation
+        onTierFilter={handleTierFilter}
+        selectedTier={selectedTier}
+      />
 
-          <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white flex-1 min-w-[200px]">
-            <CardContent>
-              <Typography variant="h6" className="font-medium">
-                Current Week
-              </Typography>
-              <Typography variant="h4" className="font-bold">
-                {globalStats.current_week_number}
-              </Typography>
-            </CardContent>
-          </Card>
+      <UsersTable
+        users={users}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        loading={isLoading}
+      />
 
-          <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white flex-1 min-w-[200px]">
-            <CardContent>
-              <Typography variant="h6" className="font-medium">
-                Last Snapshot
-              </Typography>
-              <Typography variant="h4" className="font-bold">
-                {globalStats.last_snapshot_hour}h
-              </Typography>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <TablePagination
+        component="div"
+        count={totalUsers}
+        page={page}
+        onPageChange={handleChangePage}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={handleChangeRowsPerPage}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        className="border-t bg-gray-50/50 mt-4"
+        labelDisplayedRows={({ from, to, count }) =>
+          `${from}–${to} of ${count !== -1 ? count : `more than ${to}`} users`
+        }
+      />
 
-      {error && (
-        <Alert severity="error" className="mb-6">
-          {error}
-        </Alert>
-      )}
-
-      <Paper elevation={2} className="overflow-hidden">
-        <TableContainer>
-          <Table stickyHeader>
-            <TableHead>
-              <TableRow>
-                <TableCell className="bg-gray-50 font-semibold">Rank</TableCell>
-                <TableCell className="bg-gray-50 font-semibold">
-                  Address
-                </TableCell>
-                <TableCell className="bg-gray-50 font-semibold" align="right">
-                  Balance (WMON)
-                </TableCell>
-                <TableCell className="bg-gray-50 font-semibold" align="center">
-                  Tier
-                </TableCell>
-                <TableCell className="bg-gray-50 font-semibold" align="right">
-                  Total Points
-                </TableCell>
-                <TableCell className="bg-gray-50 font-semibold">
-                  Last Update
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {users.map((user, index) => {
-                const formatted = formatUserData(user);
-                const rank = page * rowsPerPage + index + 1;
-
-                return (
-                  <TableRow
-                    key={user.id}
-                    className="hover:bg-gray-50 transition-colors duration-200"
-                    sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
-                  >
-                    <TableCell>
-                      <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold text-white">
-                        {rank}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <code className="text-sm bg-gray-100 px-3 py-2 rounded-lg font-mono">
-                        {`${formatted.address.slice(
-                          0,
-                          8
-                        )}...${formatted.address.slice(-6)}`}
-                      </code>
-                    </TableCell>
-                    <TableCell
-                      align="right"
-                      className="font-mono text-base font-medium"
-                    >
-                      {formatted.balance}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Chip
-                        label={getTierName(formatted.tier)}
-                        color={getTierColor(formatted.tier)}
-                        size="small"
-                        variant="filled"
-                        className="font-medium"
-                      />
-                    </TableCell>
-                    <TableCell align="right" className="font-bold text-lg">
-                      {parseInt(formatted.totalPoints).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600">
-                      {new Date(formatted.lastUpdate).toLocaleString("en-US", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        timeZoneName: "short",
-                      })}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {users.length === 0 && !loading && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
-                    <Typography variant="body1" className="text-gray-500">
-                      No users found
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        <TablePagination
-          component="div"
-          count={totalUsers}
-          page={page}
-          onPageChange={handleChangePage}
-          rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          rowsPerPageOptions={[10, 25, 50, 100]}
-          className="border-t bg-gray-50"
-          labelDisplayedRows={({ from, to, count }) =>
-            `${from}–${to} of ${count !== -1 ? count : `more than ${to}`} users`
-          }
-        />
-      </Paper>
-
-      {loading && users.length > 0 && (
+      {isLoading && users.length > 0 && (
         <Box display="flex" justifyContent="center" className="mt-4">
           <CircularProgress size={24} />
           <Typography variant="body2" className="ml-2 text-gray-600">
-            Loading...
+            Updating...
           </Typography>
         </Box>
       )}
     </Container>
+  );
+};
+
+export default function UsersPage() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={theme}>
+        <UsersPageContent />
+        <ReactQueryDevtools initialIsOpen={false} />
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
