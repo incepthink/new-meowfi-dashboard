@@ -52,7 +52,7 @@ export const UsersTable: React.FC<UsersTableProps> = ({
             <TableRow>
               <TableCell>Rank</TableCell>
               <TableCell>Address</TableCell>
-              <TableCell align="right">Balance (WMON)</TableCell>
+              <TableCell align="right">Balance (SPIKE)</TableCell>
               <TableCell align="center">Tier</TableCell>
               <TableCell align="right">Total Points</TableCell>
               <TableCell>Last Update</TableCell>
